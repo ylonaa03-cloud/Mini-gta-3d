@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mini GTA 3D</title>
+<style>:root { color-scheme: dark; }</style>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: "Trebuchet MS", Arial, sans-serif; }
   canvas { display: block; }
-  #hud { position: fixed; top: 16px; right: 20px; text-align: right; color: #fff; text-shadow: 2px 2px 0 #000; pointer-events: none; }
+  #hud { position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); right: calc(20px + env(safe-area-inset-right, 0px)); text-align: right; color: #fff; text-shadow: 2px 2px 0 #000; pointer-events: none; }
   #money { font-size: 34px; font-weight: bold; color: #7dff7d; }
   #wanted { font-size: 30px; letter-spacing: 2px; }
   #wanted .on { color: #ffd23f; }
@@ -18,9 +19,20 @@
   #msg { position: fixed; top: 30%; width: 100%; text-align: center; font-size: 56px; font-weight: bold; color: #ffd23f; text-shadow: 3px 3px 0 #000; pointer-events: none; opacity: 0; transition: opacity .3s; }
   #hint { position: fixed; bottom: 24px; width: 100%; text-align: center; color: #fff; font-size: 18px; text-shadow: 2px 2px 0 #000; pointer-events: none; }
   #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,.75); color: #fff; cursor: pointer; text-align: center; padding: 16px; }
-  #start h1 { font-size: 64px; margin: 0 0 12px; color: #ffd23f; text-shadow: 4px 4px 0 #c0392b; }
+  #start h1 { font-size: clamp(36px, 12vw, 64px); margin: 0 0 12px; color: #ffd23f; text-shadow: 4px 4px 0 #c0392b; }
   #start p { font-size: 18px; margin: 4px; }
   #start .go { margin-top: 24px; font-size: 24px; animation: blink 1s infinite; }
+  #touch { display: none; }
+  body.touch #touch { display: block; }
+  body.touch #help { display: none; }
+  body.touch #minimap { top: calc(12px + env(safe-area-inset-top, 0px)); bottom: auto; left: calc(12px + env(safe-area-inset-left, 0px)); width: 110px; height: 110px; }
+  body.touch #hint { bottom: calc(190px + env(safe-area-inset-bottom, 0px)); font-size: 15px; }
+  body.touch #msg { font-size: 36px; }
+  #stick { position: fixed; left: calc(24px + env(safe-area-inset-left, 0px)); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); width: 140px; height: 140px; border-radius: 50%; background: rgba(255,255,255,.15); border: 2px solid rgba(255,255,255,.4); touch-action: none; }
+  #knob { position: absolute; left: 45px; top: 45px; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,.6); pointer-events: none; }
+  #btns { position: fixed; right: calc(20px + env(safe-area-inset-right, 0px)); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: repeat(2, 64px); gap: 12px; }
+  #btns button { width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5); background: rgba(0,0,0,.4); color: #fff; font: bold 13px "Trebuchet MS", Arial, sans-serif; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #btns button.on { background: rgba(255,210,63,.6); }
   @keyframes blink { 50% { opacity: .3; } }
 </style>
 </head>
@@ -38,6 +50,15 @@
 <canvas id="minimap" width="180" height="180"></canvas>
 <div id="msg"></div>
 <div id="hint"></div>
+<div id="touch">
+  <div id="stick"><div id="knob"></div></div>
+  <div id="btns">
+    <button data-key="KeyF">Frapper</button>
+    <button data-key="KeyE">Voiture</button>
+    <button data-key="ShiftLeft" data-hold="1">Courir</button>
+    <button data-key="Space">Saut<br>Frein</button>
+  </div>
+</div>
 <div id="start">
   <h1>MINI GTA 3D</h1>
   <p>Explore la ville, vole des voitures, ramasse les billets verts.</p>
@@ -338,6 +359,44 @@ addEventListener('keydown', e => {
   if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
 });
 addEventListener('keyup', e => keys.delete(e.code));
+
+// Commandes tactiles
+const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+if (isTouch) {
+  document.body.classList.add('touch');
+  document.querySelector('#start .go').textContent = 'Touche l\'écran pour jouer';
+  const stick = document.getElementById('stick'), knob = document.getElementById('knob');
+  let stickId = null;
+  const setStick = (x, y) => {
+    knob.style.transform = `translate(${x * 45}px, ${y * 45}px)`;
+    const set = (code, on) => on ? keys.add(code) : keys.delete(code);
+    set('KeyW', y < -0.3); set('KeyS', y > 0.4);
+    set('KeyA', x < -0.3); set('KeyD', x > 0.3);
+  };
+  const moveStick = t => {
+    const r = stick.getBoundingClientRect();
+    let x = (t.clientX - r.left - r.width / 2) / (r.width / 2);
+    let y = (t.clientY - r.top - r.height / 2) / (r.height / 2);
+    const l = Math.hypot(x, y);
+    if (l > 1) { x /= l; y /= l; }
+    setStick(x, y);
+  };
+  stick.addEventListener('touchstart', e => { e.preventDefault(); const t = e.changedTouches[0]; stickId = t.identifier; moveStick(t); }, { passive: false });
+  stick.addEventListener('touchmove', e => { e.preventDefault(); for (const t of e.changedTouches) if (t.identifier === stickId) moveStick(t); }, { passive: false });
+  const endStick = e => { for (const t of e.changedTouches) if (t.identifier === stickId) { stickId = null; setStick(0, 0); } };
+  stick.addEventListener('touchend', endStick);
+  stick.addEventListener('touchcancel', endStick);
+  for (const b of document.querySelectorAll('#btns button')) {
+    const code = b.dataset.key;
+    b.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (b.dataset.hold) { const on = !keys.has(code); on ? keys.add(code) : keys.delete(code); b.classList.toggle('on', on); return; }
+      pressed.add(code); keys.add(code); b.classList.add('on');
+    }, { passive: false });
+    b.addEventListener('touchend', e => { e.preventDefault(); if (!b.dataset.hold) { keys.delete(code); b.classList.remove('on'); } });
+  }
+  document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+}
 const down = (...codes) => codes.some(c => keys.has(c));
 
 const player = {
